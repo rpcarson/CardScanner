@@ -28,6 +28,8 @@ class ViewController: UIViewController {
     private var dataOutput: AVCaptureVideoDataOutput?
     private var currentCMSampleBuffer: CMSampleBuffer?
     
+    var captureSampleBufferRate = 5
+    
     //MARK: - Private properties
     private var bufferImageForSizing: UIImage?
     private var outputIsOn = false {
@@ -73,6 +75,9 @@ class ViewController: UIViewController {
     //MARK: - Lifecycle
     override func viewDidLoad() {
         super.viewDidLoad()
+        
+        let man = ApiManager()
+        man.request()
         
         visionHandler = VisionHandler()
         
@@ -159,10 +164,7 @@ class ViewController: UIViewController {
         view.layer.borderWidth = 2
         view.backgroundColor = .clear
         view.isUserInteractionEnabled = false
-        DispatchQueue.main.async {
-            self.overlayView.addSubview(view)
-        }
-        
+
         let elementFrameCenter = CGPoint(x: elementFrame.width/2, y: elementFrame.height/2)
         var overlappingFrameIndices = [Int]()
         for (i, debugFrame) in debugFrames.enumerated() {
@@ -176,6 +178,9 @@ class ViewController: UIViewController {
                 debugFrames[i].removeFromSuperview()
             }
         }
+        DispatchQueue.main.async {
+            self.overlayView.addSubview(view)
+        }
         debugFrames.append(view)
     }
     
@@ -183,9 +188,10 @@ class ViewController: UIViewController {
         visionHandler.processBuffer(buffer, withOrientation: visionOrientation, { (result) in
             switch result {
             case .success(let visionText):
-                self.processVisionText(visionText)
+                self.handleVisionTextResults(visionText)
             case .error(let error):
                 print("Error processing sample buffer: \(error)")
+                self.scannedTextDisplayTextView.text = "\n\n Error processing sample buffer: \(error)"
             }
         })
     }
@@ -210,20 +216,24 @@ class ViewController: UIViewController {
     
     private func handleVisionTextResults(_ visionText: [VisionText]) {
         for feature in visionText {
-            let value = feature.text
             if let block = feature as? VisionTextBlock {
                 for line in block.lines {
                     let adjustedFrame = self.getAdjustedVisionElementFrame(line.frame)
                     if self.cardDetectionArea.frame.contains(adjustedFrame.origin) {
+                        self.addDebugFrameToView(adjustedFrame)
                         let cardElement = CardElement(text: line.text, frame: line.frame)
                         self.detectedText.append(line.text)
                         self.cardElements.append(cardElement)
-                        self.addDebugFrameToView(line.frame)
+                        if let upperLeftElements = self.getUpperLeftElements(self.cardElements) {
+                            let upperLeftElementText = upperLeftElements.map{$0.text}
+                            let frequencyFilteredText = self.getTopResultsForLines(upperLeftElementText, resultsLimit: 5, withMinimumFrequency: 5)
+                            var displayText = ""
+                            frequencyFilteredText.forEach{displayText += "\($0)\n\n"}
+                            self.scannedTextDisplayTextView.text = displayText
+                        }
                         
-                        let frequencyFilteredText = self.getMostFrequentTextResultForLines(self.detectedText, withMinimumFrequency: 5)
-                        
-                        let possibleTitles = self.getUpperLeftTextFromElements(cardElements)
-                        
+                       
+
                         print("line \(line.text)")
                     }
                 }
@@ -292,23 +302,23 @@ class ViewController: UIViewController {
     }
     
     //MARK: - Sorting
-    
-    func getUpperLeftTextFromElements(_ cardElements: [CardElement]) -> String? {
+    ///needs to be able to return of array of matches for upper left.
+    ///what defines upper left? can i look for origin within top left box?
+    func getUpperLeftElements(_ cardElements: [CardElement]) -> [CardElement]? {
         let sortedElements = cardElements.sorted {
             return ($0.frame.origin.y < $1.frame.origin.y) && ($0.frame.origin.x < $1.frame.origin.x)
         }
         
-        var text: String?
-        
-        if sortedElements.count > 0 {
-            text = sortedElements[0].text
+        guard let topLeftMostElement = sortedElements[safe: 0] else {
+            return nil
         }
         
-        return text
+        let topLeftElements = sortedElements.filter {topLeftMostElement.frame.intersects($0.frame)}
+        return topLeftElements + [topLeftMostElement]
     }
     
     ///for minimum frequency, probably should use a relative appearence rate rather than hard amount of appearances
-    private func getMostFrequentTextResultForLines(_ textLines: [String], withMinimumFrequency minFrequency: Int = 2) -> (text: String, frequency: Int) {
+    private func getMostFrequentTextResultForLines(_ textLines: [String], withMinimumFrequency minFrequency: Int = 2) -> (text: String, frequency: Int)? {
         var mostOccuringTexts = [String:Int]()
         
         for text in textLines {
@@ -316,17 +326,13 @@ class ViewController: UIViewController {
             mostOccuringTexts[text] = (currentValue + 1)
         }
         
-        var textsWithMinimumFrequency = mostOccuringTexts.filter {$0.value > minFrequency}
-        
-        for (text, val) in mostOccuringTexts {
-            if val > 3 {
-                //  print("Text: \(text) ; Occurences: \(val)")
-            }
-        }
-        
+        let textsWithMinimumFrequency = mostOccuringTexts.filter {$0.value > minFrequency}
+
         let sortedByFrequency = textsWithMinimumFrequency.sorted {$0.value > $1.value}
-        let mostFrequentText = sortedByFrequency[0].key
-        let frequency = sortedByFrequency[0].value
+        guard let mostFrequentText = sortedByFrequency[safe: 0]?.key, let frequency = sortedByFrequency[safe: 0]?.value else {
+            return nil
+        }
+
         print("most frequent text: \(mostFrequentText) - occuring \(frequency) times")
         return (mostFrequentText, frequency)
     }
@@ -364,7 +370,7 @@ extension ViewController: AVCaptureVideoDataOutputSampleBufferDelegate {
         }
         
         outputCounter += 1
-        if outputCounter > 30 {
+        if outputCounter > captureSampleBufferRate {
             currentCMSampleBuffer = sampleBuffer
             processSampleBuffer(sampleBuffer)
             outputCounter = 0
