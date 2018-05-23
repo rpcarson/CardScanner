@@ -77,7 +77,22 @@ class ViewController: UIViewController {
         super.viewDidLoad()
         
         let man = ApiManager()
-        man.request()
+       // man.request()
+        man.getPriceForProductID("439725") {
+            result in
+            switch result {
+            case .error(let error):
+                print(error)
+            case .success(let json):
+                if let results = json["results"] as? [[String:Any]] {
+                    if let productId = results[0]["productId"] as? String {
+                        print("PRODUCT ID \(productId)")
+
+                    }
+                }
+            }
+            
+        }
         
         visionHandler = VisionHandler()
         
