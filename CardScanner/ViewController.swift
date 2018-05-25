@@ -10,6 +10,58 @@ import UIKit
 import AVFoundation
 import FirebaseMLVision
 
+
+struct Price {
+    var market: String
+    var marketFoil: String
+}
+
+class TextProcessor {
+    
+    func getMostFrequentTextResultForLines(_ textLines: [String], withMinimumFrequency minFrequency: Int = 2) -> (text: String, frequency: Int)? {
+        var mostOccuringTexts = [String:Int]()
+        
+        for text in textLines {
+            let currentValue = mostOccuringTexts[text] ?? 0
+            mostOccuringTexts[text] = (currentValue + 1)
+        }
+        
+        let textsWithMinimumFrequency = mostOccuringTexts.filter {$0.value > minFrequency}
+        
+        let sortedByFrequency = textsWithMinimumFrequency.sorted {$0.value > $1.value}
+        guard let mostFrequentText = sortedByFrequency[safe: 0]?.key, let frequency = sortedByFrequency[safe: 0]?.value else {
+            return nil
+        }
+        
+        print("most frequent text: \(mostFrequentText) - occuring \(frequency) times")
+        return (mostFrequentText, frequency)
+    }
+    
+    func getTopResultsForLines(_ textLines: [String], resultsLimit limit: Int, withMinimumFrequency minFrequency: Int = 2) -> [String] {
+        var mostOccuringTexts = [String:Int]()
+        
+        for text in textLines {
+            let currentValue = mostOccuringTexts[text] ?? 0
+            mostOccuringTexts[text] = (currentValue + 1)
+        }
+        
+        var textsWithMinimumFrequency = mostOccuringTexts.filter {$0.value > minFrequency}
+        
+        var topResults: [(String, Int)] {
+            var results = [(String, Int)]()
+            for (element, frequency) in textsWithMinimumFrequency {
+                results.append((element, frequency))
+            }
+            return results
+        }
+        
+        let resultsSortedByFrequency = topResults.sorted{$0.1 > $1.1}
+        let topResultsWithLimit = Array(resultsSortedByFrequency.prefix(limit))
+        return topResultsWithLimit.map{ $0.0 }
+    }
+    
+}
+
 class ViewController: UIViewController {
     
     //MARK: - Outlets
@@ -28,7 +80,7 @@ class ViewController: UIViewController {
     private var dataOutput: AVCaptureVideoDataOutput?
     private var currentCMSampleBuffer: CMSampleBuffer?
     
-    var captureSampleBufferRate = 5
+    var captureSampleBufferRate = 2
     
     //MARK: - Private properties
     private var bufferImageForSizing: UIImage?
@@ -43,6 +95,8 @@ class ViewController: UIViewController {
     
     private var visionHandler: VisionHandler!
     
+    let textProcessor = TextProcessor()
+    
     var videoOrientation: AVCaptureVideoOrientation = .landscapeRight
     var visionOrientation: VisionDetectorImageOrientation = .rightTop
     
@@ -50,15 +104,9 @@ class ViewController: UIViewController {
     
     var possibleTitles = [String]()
     
-    var detectedText = [String]() {
-        didSet {
-            var text = ""
-            for _text in detectedText {
-                text += "\(_text)\n\n"
-            }
-            scannedTextDisplayTextView.text = text
-        }
-    }
+    var frequencyFilteredText = [String]()
+    
+    var detectedText = [String]()
     
     struct CardElement {
         var text: String
@@ -66,6 +114,8 @@ class ViewController: UIViewController {
     }
     
     private let dataOutputQueue = DispatchQueue(label: "com.carsonios.captureQueue")
+    
+    let apiManager = ApiManager()
     
     //MARK: - Orientation Properties
     override var shouldAutorotate: Bool {
@@ -75,25 +125,7 @@ class ViewController: UIViewController {
     //MARK: - Lifecycle
     override func viewDidLoad() {
         super.viewDidLoad()
-        
-        let man = ApiManager()
-       // man.request()
-        man.getPriceForProductID("439725") {
-            result in
-            switch result {
-            case .error(let error):
-                print(error)
-            case .success(let json):
-                if let results = json["results"] as? [[String:Any]] {
-                    if let productId = results[0]["productId"] as? String {
-                        print("PRODUCT ID \(productId)")
 
-                    }
-                }
-            }
-            
-        }
-        
         visionHandler = VisionHandler()
         
         isDetectingIndicatorView.backgroundColor = .yellow
@@ -210,26 +242,18 @@ class ViewController: UIViewController {
             }
         })
     }
-    
-    private func processVisionText(_ visionText: [VisionText]) {
-        for feature in visionText {
-            if let block = feature as? VisionTextBlock {
-                for line in block.lines {
 
-                    let adjustedFrame = self.getAdjustedVisionElementFrame(line.frame)
-                    if self.cardDetectionArea.frame.contains(adjustedFrame.origin) {
-                        let cardElement = CardElement(text: line.text, frame: line.frame)
-                        self.detectedText.append(line.text)
-                        self.cardElements.append(cardElement)
-                        self.addDebugFrameToView(adjustedFrame)
-                        print("line \(line.text)")
-                    }
-                }
-            }
+    func sortCardElements(_ elements: [CardElement]) {
+        if let upperLeftElements = self.getUpperLeftElements(elements) {
+            let upperLeftElementText = upperLeftElements.map{$0.text}
+            frequencyFilteredText = textProcessor.getTopResultsForLines(upperLeftElementText, resultsLimit: 10, withMinimumFrequency: 3)
+            var displayText = ""
+            frequencyFilteredText.forEach{displayText += "\($0)\n\n"}
+            self.scannedTextDisplayTextView.text = displayText
         }
     }
     
-    private func handleVisionTextResults(_ visionText: [VisionText]) {
+    func handleVisionTextResults(_ visionText: [VisionText]) {
         for feature in visionText {
             if let block = feature as? VisionTextBlock {
                 for line in block.lines {
@@ -239,17 +263,7 @@ class ViewController: UIViewController {
                         let cardElement = CardElement(text: line.text, frame: line.frame)
                         self.detectedText.append(line.text)
                         self.cardElements.append(cardElement)
-                        if let upperLeftElements = self.getUpperLeftElements(self.cardElements) {
-                            let upperLeftElementText = upperLeftElements.map{$0.text}
-                            let frequencyFilteredText = self.getTopResultsForLines(upperLeftElementText, resultsLimit: 5, withMinimumFrequency: 5)
-                            var displayText = ""
-                            frequencyFilteredText.forEach{displayText += "\($0)\n\n"}
-                            self.scannedTextDisplayTextView.text = displayText
-                        }
-                        
-                       
-
-                        print("line \(line.text)")
+                        self.sortCardElements(self.cardElements)
                     }
                 }
             }
@@ -261,6 +275,9 @@ class ViewController: UIViewController {
             view.removeFromSuperview()
         }
         detectedText = []
+        frequencyFilteredText = []
+        cardElements = []
+        scannedTextDisplayTextView.text = ""
     }
     
     //MARK: - Utility methods
@@ -294,26 +311,89 @@ class ViewController: UIViewController {
         clear()
     }
     
-    @IBAction func captureCurrentFrameAction(_ sender: Any) {
+    private func parsePriceData(_ json: [String:Any]) -> ApiResult<Price> {
+        guard let results = json["results"] as? [[String:Any]] else {
+            return ApiResult.error(NSError(domain: "Invalid price data", code: 3, userInfo: nil))
+        }
+        var market: Double?
+        var marketFoil: Double?
         
-        toggleDataOuput(false)
-        clear()
-        
-        guard let buffer = currentCMSampleBuffer else {
-            self.scannedTextDisplayTextView.text = "no current sample buffer"
-            print("no current sample buffer")
-            return
+        if let marketPriceInfo = results[safe: 0] {
+            market = marketPriceInfo["marketPrice"] as? Double
         }
         
-        visionHandler.processBuffer(buffer, withOrientation: visionOrientation) { (result) in
-            switch result {
-            case .success(let visionText):
-                self.handleVisionTextResults(visionText)
-            case .error(let error):
-                self.scannedTextDisplayTextView.text = "Error processing sample buffer: \(error)"
-                print("Error processing sample buffer: \(error)")
+        if let marketFoilPriceInfo = results[safe: 1] {
+            marketFoil = marketFoilPriceInfo["marketPrice"] as? Double
+        }
+        
+        return ApiResult.success(
+            Price(
+                market: market != nil ? String(market!) : "No info found for market price",
+                marketFoil: marketFoil != nil ? String(marketFoil!) : "No info found for foil market price")
+        )
+    }
+    
+    private var selectedNameResult = ""
+    
+    func showActionSheetPickerForNameOptions(_ sender: UIButton) {
+        let sheet = UIAlertController(title: "Select correct name", message: nil, preferredStyle: .actionSheet)
+        
+        if let firstOption = frequencyFilteredText[safe: 0] {
+            let action = UIAlertAction(title: firstOption, style: .default) {
+                _ in
+                self.processCardName(firstOption)
             }
+            sheet.addAction(action)
         }
+        if let secondOption = frequencyFilteredText[safe: 1] {
+            let action = UIAlertAction(title: secondOption, style: .default) {
+                _ in
+                self.processCardName(secondOption)
+            }
+            sheet.addAction(action)
+        }
+        if let thirdOption = frequencyFilteredText[safe: 2] {
+            let action = UIAlertAction(title: thirdOption, style: .default) {
+                _ in
+                self.processCardName(thirdOption)
+            }
+            sheet.addAction(action)
+        }
+        
+        sheet.addAction(UIAlertAction(title: "cancel", style: .cancel, handler: nil))
+        
+        DispatchQueue.main.async {
+            self.present(sheet, animated: true, completion: nil)
+        }
+    }
+    
+    private func processCardName(_ name: String) {
+        DispatchQueue.global(qos: .utility).async {
+            self.apiManager.getPriceForName(name, { (result) in
+                switch result {
+                case .success(let priceResult):
+                    DispatchQueue.main.async {
+                        let result = self.parsePriceData(priceResult)
+                        switch result {
+                        case .success(let price):
+                            let priceMessage = "Price for \(name): \nMarket: \(price.market)\nFoil: \(price.marketFoil)"
+                            self.scannedTextDisplayTextView.text = priceMessage
+                        case .error(let error):
+                            self.scannedTextDisplayTextView.text = "Error: \(error)"
+                        }
+                    }
+                case .error(let error):
+                    DispatchQueue.main.async {
+                        self.scannedTextDisplayTextView.text = "Error: \(error)"
+                    }
+                }
+            })
+        }
+    }
+    
+    
+    @IBAction func captureCurrentFrameAction(_ sender: Any) {
+        showActionSheetPickerForNameOptions(sender as! UIButton)
     }
     
     //MARK: - Sorting
@@ -330,49 +410,6 @@ class ViewController: UIViewController {
         
         let topLeftElements = sortedElements.filter {topLeftMostElement.frame.intersects($0.frame)}
         return topLeftElements + [topLeftMostElement]
-    }
-    
-    ///for minimum frequency, probably should use a relative appearence rate rather than hard amount of appearances
-    private func getMostFrequentTextResultForLines(_ textLines: [String], withMinimumFrequency minFrequency: Int = 2) -> (text: String, frequency: Int)? {
-        var mostOccuringTexts = [String:Int]()
-        
-        for text in textLines {
-            let currentValue = mostOccuringTexts[text] ?? 0
-            mostOccuringTexts[text] = (currentValue + 1)
-        }
-        
-        let textsWithMinimumFrequency = mostOccuringTexts.filter {$0.value > minFrequency}
-
-        let sortedByFrequency = textsWithMinimumFrequency.sorted {$0.value > $1.value}
-        guard let mostFrequentText = sortedByFrequency[safe: 0]?.key, let frequency = sortedByFrequency[safe: 0]?.value else {
-            return nil
-        }
-
-        print("most frequent text: \(mostFrequentText) - occuring \(frequency) times")
-        return (mostFrequentText, frequency)
-    }
-    
-    private func getTopResultsForLines(_ textLines: [String], resultsLimit limit: Int, withMinimumFrequency minFrequency: Int = 2) -> [String] {
-        var mostOccuringTexts = [String:Int]()
-        
-        for text in textLines {
-            let currentValue = mostOccuringTexts[text] ?? 0
-            mostOccuringTexts[text] = (currentValue + 1)
-        }
-        
-        var textsWithMinimumFrequency = mostOccuringTexts.filter {$0.value > minFrequency}
-        
-        var topResults: [(String, Int)] {
-            var results = [(String, Int)]()
-            for (element, frequency) in textsWithMinimumFrequency {
-                results.append((element, frequency))
-            }
-            return results
-        }
-        
-        let resultsSortedByFrequency = topResults.sorted{$0.1 > $1.1}
-        let topResultsWithLimit = Array(resultsSortedByFrequency.prefix(limit))
-        return topResultsWithLimit.map{ $0.0 }
     }
 }
 

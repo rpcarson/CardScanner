@@ -15,8 +15,9 @@ enum VisionResult<T> {
 }
 
 class VisionHandler {
+    
     lazy var vision = Vision.vision()
-    private var textDetector: VisionTextDetector?
+    private var textDetector: VisionTextDetector!
     
     func processImage(_ image: UIImage, _ handler: @escaping (VisionResult<[VisionText]>) -> ()) {
     
@@ -24,7 +25,7 @@ class VisionHandler {
         
         textDetector = vision.textDetector()
         
-        textDetector?.detect(in: image) { (text, error) in
+        textDetector.detect(in: image) { (text, error) in
             if let error = error {
                 handler(VisionResult.error(error))
                 return
@@ -51,7 +52,7 @@ class VisionHandler {
         
         textDetector = vision.textDetector()
         
-        textDetector?.detect(in: image) { (text, error) in
+        textDetector.detect(in: image) { (text, error) in
             if let error = error {
                 handler(VisionResult.error(error))
                 return
