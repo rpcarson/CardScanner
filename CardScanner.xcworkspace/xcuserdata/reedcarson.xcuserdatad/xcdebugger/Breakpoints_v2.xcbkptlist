@@ -9,13 +9,13 @@
             shouldBeEnabled = "No"
             ignoreCount = "0"
             continueAfterRunningActions = "No"
-            filePath = "CardScanner/ViewController.swift"
-            timestampString = "548981533.247475"
+            filePath = "CardScanner/APIManager.swift"
+            timestampString = "550017598.889328"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "321"
-            endingLineNumber = "321"
-            landmarkName = "parsePriceData(_:)"
+            startingLineNumber = "180"
+            endingLineNumber = "180"
+            landmarkName = "parseAuthRequest(_:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -25,14 +25,14 @@
             shouldBeEnabled = "No"
             ignoreCount = "0"
             continueAfterRunningActions = "No"
-            filePath = "CardScanner/ViewController.swift"
-            timestampString = "548981533.247566"
+            filePath = "CardScanner/APIManager.swift"
+            timestampString = "550017598.891616"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "329"
-            endingLineNumber = "329"
-            landmarkName = "parsePriceData(_:)"
-            landmarkType = "7">
+            startingLineNumber = "69"
+            endingLineNumber = "69"
+            landmarkName = "isExpired"
+            landmarkType = "24">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -42,12 +42,12 @@
             ignoreCount = "0"
             continueAfterRunningActions = "No"
             filePath = "CardScanner/ViewController.swift"
-            timestampString = "548981533.247623"
+            timestampString = "550181123.41983"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "252"
-            endingLineNumber = "252"
-            landmarkName = "sortCardElements(_:)"
+            startingLineNumber = "118"
+            endingLineNumber = "118"
+            landmarkName = "viewDidLayoutSubviews()"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>

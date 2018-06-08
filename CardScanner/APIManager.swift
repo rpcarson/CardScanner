@@ -19,6 +19,7 @@ struct APIConstants {
     static let publicKey = "3E110245-55AA-4358-8881-083C8436450B" //client_id
     static let privateKey = "58CB2CFA-2CAA-49F2-A135-03C493F511FA" //client_secret
     static let searchByName = "http://api.tcgplayer.com/catalog/products?productName="
+    static let applicationID = 2182
 }
 
 enum RequestType {
@@ -33,20 +34,39 @@ enum ApiResult<T> {
 
 class ApiManager {
     
+    private let defaults = UserDefaults.standard
+    
     typealias Completion<T> = ((ApiResult<T>) -> Void)
     
+    private var accessToken: String {
+        get {
+            return defaults.string(forKey: "accessToken") ?? ""
+        }
+        set {
+            defaults.set(newValue, forKey: "accessToken")
+        }
+    }
    
+    private var timeToTokenExpiration: Double {
+        get {
+            return defaults.double(forKey: "timeToExpiration")
+        }
+        set {
+            defaults.set(newValue, forKey: "timeToExpiration")
+        }
+    }
     
-    private var publicKey = "3E110245-55AA-4358-8881-083C8436450B" //client_id
-    private var privateKey = "58CB2CFA-2CAA-49F2-A135-03C493F511FA" //client_secret
-    private var applicationID = 2182
-    private var accessToken: String  = "Et5wftoKJQZd38eUvYyzANI2ezY5yzoU2rz6JEhP_k4foLV9JKUEULsSJh5k7ohopVpCeKZid3LRgfFSCkBvjgNUpF15Mszmi7XWXNb2LGHapWaRgh3Im8AXobpH7f567TbrfDQsp8lOMNg1JPeQtTIwX8IXlIjM5bbehK-1UyWct7NIj-lAPTphQ2043_-MdxG8d4cLsr3mDZZQev7w3THR3jkYcBvbrGKyHRdIYdAxTt9Rt359EE6gSG7xAo91Mkoc-T-cPuuAxe7wJBVB78mwOhglXb-Q9hFTtNWWL9l2nU3lmABLpSVCdp6uRPF09tSUTw" //BEARER_TOKEN
-   
-    var tokenExpiration: Double?
+    private var tokenRenewalDate: Double {
+        get {
+            return defaults.double(forKey: "tokenRenewalDate")
+        }
+        set {
+            defaults.set(newValue, forKey: "tokenRenewalDate")
+        }
+    }
+    
     var isExpired: Bool {
-        return tokenExpiration != nil ?
-                Date().timeIntervalSince1970 > tokenExpiration! :
-                true
+        return Date().timeIntervalSince1970 - tokenRenewalDate > timeToTokenExpiration
     }
     
     func getPriceForName(_ name: String, _ completion: @escaping Completion<[String:Any]>) {
@@ -118,7 +138,7 @@ class ApiManager {
         return request
     }
     
-    private func requestAuthorization(_ completion: @escaping Completion<[String:Any]>) {
+    func requestAuthorization(_ completion: @escaping (Completion<()>)) {
         guard let url = URL(string: APIConstants.authEndpoint) else {
             let error = NSError(domain: "bad url", code: 1, userInfo: nil)
             print("bad url")
@@ -130,12 +150,34 @@ class ApiManager {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        let data = "grant_type=client_credentials&client_id=\(publicKey)&client_secret=\(privateKey)"
+        let data = "grant_type=client_credentials&client_id=\(APIConstants.publicKey)&client_secret=\(APIConstants.privateKey)"
         request.httpBody = data.data(using: .utf8, allowLossyConversion: true)
         
         runDataTaskWithRequest(request, session: session) { (result) in
-            completion(result)
+            switch result {
+            case .success(let json):
+                if self.parseAuthRequest(json) == true {
+                    completion(ApiResult.success(()))
+                } else {
+                    let error = NSError(domain: "unable to parse auth results", code: 4, userInfo: nil)
+                    completion(ApiResult.error(error))
+                }
+            case .error(let error):
+                completion(ApiResult.error(error))
+            }
         }
+    }
+    
+    private func parseAuthRequest(_ json: [String:Any]) -> Bool {
+        guard let token = json["access_token"] as? String,
+            let expiry = json["expires_in"] as? Double
+            else {
+                return false
+        }
+        tokenRenewalDate = Date().timeIntervalSince1970
+        accessToken = token
+        timeToTokenExpiration = expiry
+        return true
     }
     
     private func getProductIdForJson(_ json: [String:Any]) -> Int? {

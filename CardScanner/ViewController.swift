@@ -16,50 +16,9 @@ struct Price {
     var marketFoil: String
 }
 
-class TextProcessor {
-    
-    func getMostFrequentTextResultForLines(_ textLines: [String], withMinimumFrequency minFrequency: Int = 2) -> (text: String, frequency: Int)? {
-        var mostOccuringTexts = [String:Int]()
-        
-        for text in textLines {
-            let currentValue = mostOccuringTexts[text] ?? 0
-            mostOccuringTexts[text] = (currentValue + 1)
-        }
-        
-        let textsWithMinimumFrequency = mostOccuringTexts.filter {$0.value > minFrequency}
-        
-        let sortedByFrequency = textsWithMinimumFrequency.sorted {$0.value > $1.value}
-        guard let mostFrequentText = sortedByFrequency[safe: 0]?.key, let frequency = sortedByFrequency[safe: 0]?.value else {
-            return nil
-        }
-        
-        print("most frequent text: \(mostFrequentText) - occuring \(frequency) times")
-        return (mostFrequentText, frequency)
-    }
-    
-    func getTopResultsForLines(_ textLines: [String], resultsLimit limit: Int, withMinimumFrequency minFrequency: Int = 2) -> [String] {
-        var mostOccuringTexts = [String:Int]()
-        
-        for text in textLines {
-            let currentValue = mostOccuringTexts[text] ?? 0
-            mostOccuringTexts[text] = (currentValue + 1)
-        }
-        
-        var textsWithMinimumFrequency = mostOccuringTexts.filter {$0.value > minFrequency}
-        
-        var topResults: [(String, Int)] {
-            var results = [(String, Int)]()
-            for (element, frequency) in textsWithMinimumFrequency {
-                results.append((element, frequency))
-            }
-            return results
-        }
-        
-        let resultsSortedByFrequency = topResults.sorted{$0.1 > $1.1}
-        let topResultsWithLimit = Array(resultsSortedByFrequency.prefix(limit))
-        return topResultsWithLimit.map{ $0.0 }
-    }
-    
+struct CardElement {
+    var text: String
+    var frame: CGRect
 }
 
 class ViewController: UIViewController {
@@ -78,9 +37,6 @@ class ViewController: UIViewController {
     private var captureSession: AVCaptureSession?
     private var videoPreviewLayer: AVCaptureVideoPreviewLayer?
     private var dataOutput: AVCaptureVideoDataOutput?
-    private var currentCMSampleBuffer: CMSampleBuffer?
-    
-    var captureSampleBufferRate = 2
     
     //MARK: - Private properties
     private var bufferImageForSizing: UIImage?
@@ -91,27 +47,25 @@ class ViewController: UIViewController {
         }
     }
     private var outputCounter = 0
+    var captureSampleBufferRate = 2
+    var processResultsRate = 5
+    var processCounter = 0
+
     private var debugFrames = [UIView]()
     
     private var visionHandler: VisionHandler!
     
-    let textProcessor = TextProcessor()
+    let visionTextProcessor = VisionTextProcessor()
     
     var videoOrientation: AVCaptureVideoOrientation = .landscapeRight
     var visionOrientation: VisionDetectorImageOrientation = .rightTop
-    
+//    var visionOrientation: VisionDetectorImageOrientation {
+//        return VisionDetectorImageOrientation(rawValue: UInt(getExifOrientation()))!
+//    }
+
     var cardElements = [CardElement]()
     
     var possibleTitles = [String]()
-    
-    var frequencyFilteredText = [String]()
-    
-    var detectedText = [String]()
-    
-    struct CardElement {
-        var text: String
-        var frame: CGRect
-    }
     
     private let dataOutputQueue = DispatchQueue(label: "com.carsonios.captureQueue")
     
@@ -142,12 +96,27 @@ class ViewController: UIViewController {
         cardDetectionArea.layer.borderWidth = 2
         cardDetectionArea.layer.borderColor = UIColor.red.cgColor
         cardDetectionArea.backgroundColor = .clear
+        
+        if apiManager.isExpired {
+            scannedTextDisplayTextView.text = "REQUESTING AUTH"
+            apiManager.requestAuthorization { (result) in
+                switch result {
+                case .success:
+                    DispatchQueue.main.async {
+                        self.scannedTextDisplayTextView.text = "Auth successful"
+                    }
+                case .error(let error):
+                    DispatchQueue.main.async {
+                        self.scannedTextDisplayTextView.text = "Auth Error: \(error)"
+                    }
+                }
+            }
+        }
     }
     
     override func viewDidLayoutSubviews() {
         videoPreviewLayer?.frame = view.bounds
         isDetectingIndicatorView.layer.cornerRadius = isDetectingIndicatorView.bounds.height / 2
-        
         captureCurrentFrameButton.layer.cornerRadius = captureCurrentFrameButton.bounds.height / 2
     }
     
@@ -172,7 +141,7 @@ class ViewController: UIViewController {
             captureSession = AVCaptureSession()
             captureSession?.addInput(input)
             
-            captureSession?.sessionPreset = AVCaptureSession.Preset.hd1920x1080
+            captureSession?.sessionPreset = .hd1920x1080
             
             videoPreviewLayer = AVCaptureVideoPreviewLayer(session: captureSession!)
             videoPreviewLayer?.videoGravity = AVLayerVideoGravity.resizeAspectFill
@@ -242,16 +211,6 @@ class ViewController: UIViewController {
             }
         })
     }
-
-    func sortCardElements(_ elements: [CardElement]) {
-        if let upperLeftElements = self.getUpperLeftElements(elements) {
-            let upperLeftElementText = upperLeftElements.map{$0.text}
-            frequencyFilteredText = textProcessor.getTopResultsForLines(upperLeftElementText, resultsLimit: 10, withMinimumFrequency: 3)
-            var displayText = ""
-            frequencyFilteredText.forEach{displayText += "\($0)\n\n"}
-            self.scannedTextDisplayTextView.text = displayText
-        }
-    }
     
     func handleVisionTextResults(_ visionText: [VisionText]) {
         for feature in visionText {
@@ -261,11 +220,23 @@ class ViewController: UIViewController {
                     if self.cardDetectionArea.frame.contains(adjustedFrame.origin) {
                         self.addDebugFrameToView(adjustedFrame)
                         let cardElement = CardElement(text: line.text, frame: line.frame)
-                        self.detectedText.append(line.text)
-                        self.cardElements.append(cardElement)
-                        self.sortCardElements(self.cardElements)
+                        self.visionTextProcessor.cardElements.append(cardElement)
                     }
                 }
+            }
+        }
+    }
+    
+    private func processTextResults() {
+        let topTitleResults = self.visionTextProcessor.getTopXTitles(5)
+        var displayText = ""
+        topTitleResults.forEach {displayText += "\($0)\n\n"}
+        DispatchQueue.main.async {
+            self.scannedTextDisplayTextView.text = displayText
+            
+            if topTitleResults.count == 1 {
+                self.processCardName(topTitleResults[0])
+                self.toggleScan()
             }
         }
     }
@@ -274,9 +245,7 @@ class ViewController: UIViewController {
         for view in debugFrames {
             view.removeFromSuperview()
         }
-        detectedText = []
-        frequencyFilteredText = []
-        cardElements = []
+        visionTextProcessor.clear()
         scannedTextDisplayTextView.text = ""
     }
     
@@ -301,10 +270,14 @@ class ViewController: UIViewController {
         return UIImage(ciImage: ciImage)
     }
     
-    //MARK: - IBActions
-    @IBAction func detectButtonAction(_ sender: Any) {
+    private func toggleScan() {
         toggleDataOuput(!outputIsOn)
         outputIsOn = !outputIsOn
+    }
+    
+    //MARK: - IBActions
+    @IBAction func detectButtonAction(_ sender: Any) {
+        toggleScan()
     }
     
     @IBAction func clearDebugFrames(_ sender: UIButton) {
@@ -318,12 +291,19 @@ class ViewController: UIViewController {
         var market: Double?
         var marketFoil: Double?
         
-        if let marketPriceInfo = results[safe: 0] {
-            market = marketPriceInfo["marketPrice"] as? Double
+        if let priceInfo = results[safe: 0] {
+            if priceInfo["subTypeName"] as? String == "Foil" {
+                marketFoil = priceInfo["marketPrice"] as? Double
+            } else if priceInfo["subTypeName"] as? String == "Normal" {
+                market = priceInfo["marketPrice"] as? Double
+            }
         }
-        
-        if let marketFoilPriceInfo = results[safe: 1] {
-            marketFoil = marketFoilPriceInfo["marketPrice"] as? Double
+        if let priceInfo = results[safe: 1] {
+            if priceInfo["subTypeName"] as? String == "Foil" {
+                marketFoil = priceInfo["marketPrice"] as? Double
+            } else if priceInfo["subTypeName"] as? String == "Normal" {
+                market = priceInfo["marketPrice"] as? Double
+            }
         }
         
         return ApiResult.success(
@@ -333,29 +313,13 @@ class ViewController: UIViewController {
         )
     }
     
-    private var selectedNameResult = ""
-    
-    func showActionSheetPickerForNameOptions(_ sender: UIButton) {
+    private func showActionSheetPickerForNameOptions(_ sender: UIButton) {
         let sheet = UIAlertController(title: "Select correct name", message: nil, preferredStyle: .actionSheet)
         
-        if let firstOption = frequencyFilteredText[safe: 0] {
-            let action = UIAlertAction(title: firstOption, style: .default) {
+        for title in visionTextProcessor.getTopXTitles(3) {
+            let action = UIAlertAction(title: title, style: .default) {
                 _ in
-                self.processCardName(firstOption)
-            }
-            sheet.addAction(action)
-        }
-        if let secondOption = frequencyFilteredText[safe: 1] {
-            let action = UIAlertAction(title: secondOption, style: .default) {
-                _ in
-                self.processCardName(secondOption)
-            }
-            sheet.addAction(action)
-        }
-        if let thirdOption = frequencyFilteredText[safe: 2] {
-            let action = UIAlertAction(title: thirdOption, style: .default) {
-                _ in
-                self.processCardName(thirdOption)
+                self.processCardName(title)
             }
             sheet.addAction(action)
         }
@@ -396,21 +360,26 @@ class ViewController: UIViewController {
         showActionSheetPickerForNameOptions(sender as! UIButton)
     }
     
-    //MARK: - Sorting
-    ///needs to be able to return of array of matches for upper left.
-    ///what defines upper left? can i look for origin within top left box?
-    func getUpperLeftElements(_ cardElements: [CardElement]) -> [CardElement]? {
-        let sortedElements = cardElements.sorted {
-            return ($0.frame.origin.y < $1.frame.origin.y) && ($0.frame.origin.x < $1.frame.origin.x)
+    func getExifOrientation() -> UInt32 {
+        
+        var exifOrientation: CGImagePropertyOrientation!
+        
+        switch UIDevice.current.orientation {
+        case UIDeviceOrientation.portraitUpsideDown:  // Device oriented vertically, home button on the top
+            exifOrientation = .left
+        case UIDeviceOrientation.landscapeLeft:       // Device oriented horizontally, home button on the right
+            exifOrientation = .upMirrored
+        case UIDeviceOrientation.landscapeRight:      // Device oriented horizontally, home button on the left
+            exifOrientation = .down
+        case UIDeviceOrientation.portrait:            // Device oriented vertically, home button on the bottom
+            exifOrientation = .up
+        default:
+            exifOrientation = .up
         }
         
-        guard let topLeftMostElement = sortedElements[safe: 0] else {
-            return nil
-        }
-        
-        let topLeftElements = sortedElements.filter {topLeftMostElement.frame.intersects($0.frame)}
-        return topLeftElements + [topLeftMostElement]
+        return exifOrientation.rawValue
     }
+  
 }
 
 //MARK: - Extensions
@@ -422,22 +391,32 @@ extension ViewController: AVCaptureVideoDataOutputSampleBufferDelegate {
         }
         
         outputCounter += 1
+        processCounter += 1
+        
+        if processCounter > processResultsRate {
+            DispatchQueue.main.async {
+                self.processTextResults()
+            }
+            processCounter = 0
+        }
+        
         if outputCounter > captureSampleBufferRate {
-            currentCMSampleBuffer = sampleBuffer
             processSampleBuffer(sampleBuffer)
             outputCounter = 0
         }
+        
+       
     }
 }
 
-extension UIInterfaceOrientation {
-    var videoOrientation: AVCaptureVideoOrientation? {
+extension UIDeviceOrientation {
+    var videoOrientation: AVCaptureVideoOrientation {
         switch self {
         case .portraitUpsideDown: return .portraitUpsideDown
         case .landscapeRight: return .landscapeRight
         case .landscapeLeft: return .landscapeLeft
         case .portrait: return .portrait
-        default: return nil
+        default: return .landscapeRight
         }
     }
 }

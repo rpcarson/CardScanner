@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		5B01741F20C7367600CCD77F /* TextProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B01741E20C7367600CCD77F /* TextProcessor.swift */; };
 		5B34F73920AB8671007525F0 /* VisionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B34F73820AB8671007525F0 /* VisionHandler.swift */; };
 		5B34F73B20AF1751007525F0 /* Collection+SafeLookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B34F73A20AF1751007525F0 /* Collection+SafeLookup.swift */; };
 		5B34F73D20AF4A7C007525F0 /* APIManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B34F73C20AF4A7C007525F0 /* APIManager.swift */; };
@@ -20,6 +21,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		5B01741E20C7367600CCD77F /* TextProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextProcessor.swift; sourceTree = "<group>"; };
 		5B34F73820AB8671007525F0 /* VisionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisionHandler.swift; sourceTree = "<group>"; };
 		5B34F73A20AF1751007525F0 /* Collection+SafeLookup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Collection+SafeLookup.swift"; sourceTree = "<group>"; };
 		5B34F73C20AF4A7C007525F0 /* APIManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIManager.swift; sourceTree = "<group>"; };
@@ -80,6 +82,7 @@
 				5B3CDA0020A9DDDD007DD497 /* GoogleService-Info.plist */,
 				5B3CD9EE20A9DDC0007DD497 /* AppDelegate.swift */,
 				5B3CD9F020A9DDC0007DD497 /* ViewController.swift */,
+				5B01741E20C7367600CCD77F /* TextProcessor.swift */,
 				5B34F73C20AF4A7C007525F0 /* APIManager.swift */,
 				5B34F73A20AF1751007525F0 /* Collection+SafeLookup.swift */,
 				5B34F73820AB8671007525F0 /* VisionHandler.swift */,
@@ -245,6 +248,7 @@
 				5B34F73D20AF4A7C007525F0 /* APIManager.swift in Sources */,
 				5B34F73B20AF1751007525F0 /* Collection+SafeLookup.swift in Sources */,
 				5B34F73920AB8671007525F0 /* VisionHandler.swift in Sources */,
+				5B01741F20C7367600CCD77F /* TextProcessor.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
