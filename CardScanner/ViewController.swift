@@ -16,13 +16,7 @@ struct Price {
     var marketFoil: String
 }
 
-struct CardElement {
-    var text: String
-    var frame: CGRect
-}
-
-class ViewController: UIViewController {
-    
+class ViewController: UIViewController, MTGReaderDelegate {
     //MARK: - Outlets
     @IBOutlet weak var cardDetectionArea: UIView!
     @IBOutlet weak var detectButton: UIButton!
@@ -57,6 +51,11 @@ class ViewController: UIViewController {
     
     let visionTextProcessor = VisionTextProcessor()
     
+    
+    let mtgTitleReader = MTGTitleReader()
+    
+    
+    
     var videoOrientation: AVCaptureVideoOrientation = .landscapeRight
     var visionOrientation: VisionDetectorImageOrientation = .rightTop
 //    var visionOrientation: VisionDetectorImageOrientation {
@@ -80,6 +79,11 @@ class ViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
+        mtgTitleReader.readerDelegate = self
+        mtgTitleReader.validRectForReading = cardDetectionArea.frame
+        mtgTitleReader.accuracyRequired = 0.75
+        mtgTitleReader.visionResultsProcessingFrequency = 5
+        
         visionHandler = VisionHandler()
         
         isDetectingIndicatorView.backgroundColor = .yellow
@@ -245,7 +249,7 @@ class ViewController: UIViewController {
         for view in debugFrames {
             view.removeFromSuperview()
         }
-        visionTextProcessor.clear()
+        mtgTitleReader.reset()
         scannedTextDisplayTextView.text = ""
     }
     
@@ -379,6 +383,17 @@ class ViewController: UIViewController {
         
         return exifOrientation.rawValue
     }
+    
+    func didDetectTitle(_ title: String) {
+        toggleScan()
+        processCardName(title)
+    }
+    
+    func didDetectFrameForVisionElement(_ frame: CGRect) {
+        DispatchQueue.main.async {
+            self.addDebugFrameToView(frame)
+        }
+    }
   
 }
 
@@ -394,14 +409,27 @@ extension ViewController: AVCaptureVideoDataOutputSampleBufferDelegate {
         processCounter += 1
         
         if processCounter > processResultsRate {
-            DispatchQueue.main.async {
-                self.processTextResults()
-            }
-            processCounter = 0
+//            DispatchQueue.main.async {
+//                self.processTextResults()
+//            }
+//            processCounter = 0
         }
         
         if outputCounter > captureSampleBufferRate {
-            processSampleBuffer(sampleBuffer)
+            mtgTitleReader.processSampleBuffer(sampleBuffer) { (error) in
+                self.scannedTextDisplayTextView.text = "error \(error)"
+            }
+            
+//            mtgTitleReader.getXPossibleTitleForSampleBuffer(3, sampleBuffer) { (result) in
+//                switch result {
+//                case .success(let results):
+//                    self.scannedTextDisplayTextView.text = "results \(results)"
+//                case .error(let error):
+//                    self.scannedTextDisplayTextView.text = "error \(error)"
+//                }
+//            }
+            
+         //   processSampleBuffer(sampleBuffer)
             outputCounter = 0
         }
         

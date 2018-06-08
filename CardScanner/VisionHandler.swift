@@ -42,13 +42,14 @@ class VisionHandler {
     }
     
     
-    func processBuffer(_ buffer: CMSampleBuffer, withOrientation orientation: VisionDetectorImageOrientation, _ handler: @escaping (VisionResult<[VisionText]>) -> ()) {
-        
-        let metadata = VisionImageMetadata()
-        metadata.orientation = orientation
+    func processBuffer(_ buffer: CMSampleBuffer, withOrientation orientation: VisionDetectorImageOrientation? = nil, _ handler: @escaping (VisionResult<[VisionText]>) -> ()) {
         
         let image = VisionImage(buffer: buffer)
-      //  image.metadata = metadata
+        
+        if let orientation = orientation {
+            let metadata = VisionImageMetadata()
+            metadata.orientation = orientation
+        }
         
         textDetector = vision.textDetector()
         

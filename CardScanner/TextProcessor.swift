@@ -8,13 +8,11 @@
 
 import Foundation
 
-
 class VisionTextProcessor {
     
     var cardElements = [CardElement]()
-    var frequencyFilteredText = [String]()
-    
-    var mostOccuringTexts = [String:Int]()
+    private var frequencyFilteredText = [String]()
+    private var mostOccuringTexts = [String:Int]()
     
     private func removeResultsUnderThreshold(_ threshold: Double, texts: [String:Int]) -> [String:Int] {
         //if textfrequency / topresultfrequency < threshold (0.01-1.0) remove
@@ -29,7 +27,7 @@ class VisionTextProcessor {
         return validResults
     }
     
-    func getMostFrequentStringOccurences(_ textLines: [String], withResultsLimit limit: Int, andMinimumFrequency minFrequency: Int = 10) -> [(String, Int)] {
+    private func getMostFrequentStringOccurences(_ textLines: [String], withResultsLimit limit: Int, andMinimumFrequency minFrequency: Int = 10, andAccuracy accuracy: Double = 0.75) -> [(String, Int)] {
         
         let characterFileteredText = textLines.map {removeSpecialCharsFromString(text: $0)}
         
@@ -40,7 +38,7 @@ class VisionTextProcessor {
         
         var textsWithMinimumFrequency = mostOccuringTexts.filter {$0.value > minFrequency}
         
-        var textFilteredByThreshold = removeResultsUnderThreshold(0.75, texts: textsWithMinimumFrequency)
+        var textFilteredByThreshold = removeResultsUnderThreshold(accuracy, texts: textsWithMinimumFrequency)
         
         print("most occuring \(textFilteredByThreshold)")
         
@@ -60,7 +58,7 @@ class VisionTextProcessor {
         return topResults
     }
     
-    func getUpperLeftElements(_ cardElements: [CardElement]) -> [CardElement] {
+    private func getUpperLeftElements(_ cardElements: [CardElement]) -> [CardElement] {
         let sortedElements = cardElements.sorted {
             return ($0.frame.origin.y < $1.frame.origin.y) && ($0.frame.origin.x < $1.frame.origin.x)
         }
@@ -73,14 +71,14 @@ class VisionTextProcessor {
         return topLeftElements + [topLeftMostElement]
     }
     
-    func getTopXTitles(_ limit: Int) -> [String] {
+    func getTopXTitles(_ limit: Int, withAccuracy accuracy: Double = 0.75) -> [String] {
         let upperLeftElements = getUpperLeftElements(cardElements)
         let upperLeftElementText = upperLeftElements.map{$0.text}
-        let results = getMostFrequentStringOccurences(upperLeftElementText, withResultsLimit: limit)
+        let results = getMostFrequentStringOccurences(upperLeftElementText, withResultsLimit: limit, andMinimumFrequency: 10, andAccuracy: accuracy)
         return results.map {$0.0}
     }
     
-    func removeSpecialCharsFromString(text: String) -> String {
+    private func removeSpecialCharsFromString(text: String) -> String {
         let okayChars = Set("abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLKMNOPQRSTUVWXYZ,-'")
         return text.filter {okayChars.contains($0)}
     }
