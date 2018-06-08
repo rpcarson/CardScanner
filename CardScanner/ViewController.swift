@@ -31,43 +31,25 @@ class ViewController: UIViewController, MTGReaderDelegate {
     private var captureSession: AVCaptureSession?
     private var videoPreviewLayer: AVCaptureVideoPreviewLayer?
     private var dataOutput: AVCaptureVideoDataOutput?
+    private let dataOutputQueue = DispatchQueue(label: "com.carsonios.captureQueue")
+    var videoOrientation: AVCaptureVideoOrientation = .landscapeRight
+    var visionOrientation: VisionDetectorImageOrientation = .rightTop
     
     //MARK: - Private properties
-    private var bufferImageForSizing: UIImage?
     private var outputIsOn = false {
         didSet {
             guard isDetectingIndicatorView != nil else { return }
             isDetectingIndicatorView.backgroundColor = outputIsOn ? .green : .yellow
         }
     }
-    private var outputCounter = 0
-    var captureSampleBufferRate = 2
-    var processResultsRate = 5
-    var processCounter = 0
-
+ 
     private var debugFrames = [UIView]()
-    
-    private var visionHandler: VisionHandler!
-    
-    let visionTextProcessor = VisionTextProcessor()
-    
-    
-    let mtgTitleReader = MTGTitleReader()
-    
-    
-    
-    var videoOrientation: AVCaptureVideoOrientation = .landscapeRight
-    var visionOrientation: VisionDetectorImageOrientation = .rightTop
-//    var visionOrientation: VisionDetectorImageOrientation {
-//        return VisionDetectorImageOrientation(rawValue: UInt(getExifOrientation()))!
-//    }
+    private var outputCounter = 0
+   
+    var captureSampleBufferRate = 2
 
-    var cardElements = [CardElement]()
-    
-    var possibleTitles = [String]()
-    
-    private let dataOutputQueue = DispatchQueue(label: "com.carsonios.captureQueue")
-    
+    let mtgTitleReader = MTGTitleReader()
+
     let apiManager = ApiManager()
     
     //MARK: - Orientation Properties
@@ -83,8 +65,6 @@ class ViewController: UIViewController, MTGReaderDelegate {
         mtgTitleReader.validRectForReading = cardDetectionArea.frame
         mtgTitleReader.accuracyRequired = 0.75
         mtgTitleReader.visionResultsProcessingFrequency = 5
-        
-        visionHandler = VisionHandler()
         
         isDetectingIndicatorView.backgroundColor = .yellow
         captureCurrentFrameButton.backgroundColor = .red
@@ -203,75 +183,13 @@ class ViewController: UIViewController, MTGReaderDelegate {
         }
         debugFrames.append(view)
     }
-    
-    private func processSampleBuffer(_ buffer: CMSampleBuffer) {
-        visionHandler.processBuffer(buffer, withOrientation: visionOrientation, { (result) in
-            switch result {
-            case .success(let visionText):
-                self.handleVisionTextResults(visionText)
-            case .error(let error):
-                print("Error processing sample buffer: \(error)")
-                self.scannedTextDisplayTextView.text = "\n\n Error processing sample buffer: \(error)"
-            }
-        })
-    }
-    
-    func handleVisionTextResults(_ visionText: [VisionText]) {
-        for feature in visionText {
-            if let block = feature as? VisionTextBlock {
-                for line in block.lines {
-                    let adjustedFrame = self.getAdjustedVisionElementFrame(line.frame)
-                    if self.cardDetectionArea.frame.contains(adjustedFrame.origin) {
-                        self.addDebugFrameToView(adjustedFrame)
-                        let cardElement = CardElement(text: line.text, frame: line.frame)
-                        self.visionTextProcessor.cardElements.append(cardElement)
-                    }
-                }
-            }
-        }
-    }
-    
-    private func processTextResults() {
-        let topTitleResults = self.visionTextProcessor.getTopXTitles(5)
-        var displayText = ""
-        topTitleResults.forEach {displayText += "\($0)\n\n"}
-        DispatchQueue.main.async {
-            self.scannedTextDisplayTextView.text = displayText
-            
-            if topTitleResults.count == 1 {
-                self.processCardName(topTitleResults[0])
-                self.toggleScan()
-            }
-        }
-    }
-    
+
     private func clear() {
         for view in debugFrames {
             view.removeFromSuperview()
         }
         mtgTitleReader.reset()
         scannedTextDisplayTextView.text = ""
-    }
-    
-    //MARK: - Utility methods
-    private func getAdjustedVisionElementFrame(_ elementFrame: CGRect) -> CGRect {
-        let screen = UIScreen.main.bounds
-        var frame = elementFrame
-        if let image = self.bufferImageForSizing {
-            let xRatio = screen.width / image.size.width
-            let yRatio = screen.height / image.size.height
-            frame = CGRect(x: frame.minX * xRatio, y: frame.minY * yRatio, width: frame.width * xRatio, height: frame.height * yRatio)
-        }
-        return frame
-    }
-    
-    private func getImageFromBuffer(_ buffer: CMSampleBuffer) -> UIImage? {
-        guard let pixelBuffer = CMSampleBufferGetImageBuffer(buffer) else {
-            print("Could not create pixel buffer")
-            return nil
-        }
-        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-        return UIImage(ciImage: ciImage)
     }
     
     private func toggleScan() {
@@ -319,17 +237,17 @@ class ViewController: UIViewController, MTGReaderDelegate {
     
     private func showActionSheetPickerForNameOptions(_ sender: UIButton) {
         let sheet = UIAlertController(title: "Select correct name", message: nil, preferredStyle: .actionSheet)
-        
-        for title in visionTextProcessor.getTopXTitles(3) {
+
+        for title in mtgTitleReader.textProcessor.getTopXTitles(3) {
             let action = UIAlertAction(title: title, style: .default) {
                 _ in
                 self.processCardName(title)
             }
             sheet.addAction(action)
         }
-        
+
         sheet.addAction(UIAlertAction(title: "cancel", style: .cancel, handler: nil))
-        
+
         DispatchQueue.main.async {
             self.present(sheet, animated: true, completion: nil)
         }
@@ -400,40 +318,14 @@ class ViewController: UIViewController, MTGReaderDelegate {
 //MARK: - Extensions
 extension ViewController: AVCaptureVideoDataOutputSampleBufferDelegate {
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        
-        if bufferImageForSizing == nil {
-            bufferImageForSizing = getImageFromBuffer(sampleBuffer)
-        }
-        
         outputCounter += 1
-        processCounter += 1
-        
-        if processCounter > processResultsRate {
-//            DispatchQueue.main.async {
-//                self.processTextResults()
-//            }
-//            processCounter = 0
-        }
-        
+
         if outputCounter > captureSampleBufferRate {
             mtgTitleReader.processSampleBuffer(sampleBuffer) { (error) in
                 self.scannedTextDisplayTextView.text = "error \(error)"
             }
-            
-//            mtgTitleReader.getXPossibleTitleForSampleBuffer(3, sampleBuffer) { (result) in
-//                switch result {
-//                case .success(let results):
-//                    self.scannedTextDisplayTextView.text = "results \(results)"
-//                case .error(let error):
-//                    self.scannedTextDisplayTextView.text = "error \(error)"
-//                }
-//            }
-            
-         //   processSampleBuffer(sampleBuffer)
             outputCounter = 0
         }
-        
-       
     }
 }
 

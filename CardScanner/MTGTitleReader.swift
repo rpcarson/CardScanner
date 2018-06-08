@@ -22,7 +22,7 @@ protocol MTGReaderDelegate {
 }
 
 class MTGTitleReader {
-    private let textProcessor: VisionTextProcessor
+    let textProcessor: VisionTextProcessor
     private let visionHandler: VisionHandler
     private let requiredBuffers: Int
     
